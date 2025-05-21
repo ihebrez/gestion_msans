@@ -6,7 +6,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     exit();
 }
 
-// Connexion à la base de données
 require 'db.php';
 
 // Récupération des utilisateurs
@@ -21,21 +20,27 @@ $stmtMsans = $pdo->query("
     ORDER BY msans.id DESC
 ");
 $msans = $stmtMsans->fetchAll(PDO::FETCH_ASSOC);
+
+// Statistiques
+$stmtCountUsers = $pdo->query("SELECT COUNT(*) AS total_users FROM users");
+$totalUsers = $stmtCountUsers->fetch(PDO::FETCH_ASSOC)['total_users'];
+
+$stmtCountMsans = $pdo->query("SELECT COUNT(*) AS total_msans FROM msans");
+$totalMsans = $stmtCountMsans->fetch(PDO::FETCH_ASSOC)['total_msans'];
 ?>
 
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8" />
-    <title>Accueil Admin - Ultra Moderne</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="UTF-8">
+    <title>Accueil Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        /* Reset & font */
+        /* Styles déjà fournis */
         * {
             margin: 0; padding: 0; box-sizing: border-box;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-
         body, html {
             height: 100%;
             background: #1e0f0f;
@@ -43,8 +48,6 @@ $msans = $stmtMsans->fetchAll(PDO::FETCH_ASSOC);
             display: flex;
             overflow: hidden;
         }
-
-        /* Sidebar */
         .sidebar {
             width: 280px;
             background: linear-gradient(180deg, #4e1a00, #a64000, #ff5a00);
@@ -54,10 +57,7 @@ $msans = $stmtMsans->fetchAll(PDO::FETCH_ASSOC);
             box-shadow: 4px 0 12px rgba(255, 90, 0, 0.7);
             position: fixed;
             height: 100%;
-            transition: width 0.3s ease;
-            user-select: none;
         }
-
         .sidebar h2 {
             font-weight: 900;
             font-size: 2.4rem;
@@ -65,17 +65,13 @@ $msans = $stmtMsans->fetchAll(PDO::FETCH_ASSOC);
             margin-bottom: 40px;
             color: #ffe5b4;
             text-align: center;
-            text-transform: uppercase;
-            text-shadow: 0 0 12px #ffa840aa;
         }
-
         .sidebar nav {
             flex-grow: 1;
             display: flex;
             flex-direction: column;
             gap: 18px;
         }
-
         .sidebar nav a {
             text-decoration: none;
             color: #f5e9e0;
@@ -83,83 +79,72 @@ $msans = $stmtMsans->fetchAll(PDO::FETCH_ASSOC);
             font-size: 1.15rem;
             padding: 14px 22px;
             border-radius: 12px;
-            background: transparent;
             display: flex;
             align-items: center;
-            gap: 14px;
             transition: all 0.3s ease;
-            box-shadow: inset 0 0 0 0 #ff7f50;
         }
-
-        .icon {
-            display: inline-block;
-            width: 20px; height: 20px;
-            background: #ff7f50;
-            border-radius: 4px;
-            box-shadow: 0 0 10px #ff7f50aa;
-        }
-
         .sidebar nav a:hover {
-            color: #1e0f0f;
             background: #ff7f50;
-            box-shadow: inset 0 0 10px #ff7f50;
+            color: #1e0f0f;
             transform: scale(1.05);
         }
-
         .sidebar nav a.logout {
             margin-top: auto;
             background: #e63946;
             color: white;
             font-weight: 700;
-            box-shadow: 0 0 15px #e63946bb;
         }
-
         .sidebar nav a.logout:hover {
             background: #c62828;
-            box-shadow: 0 0 20px #c62828aa;
-            transform: scale(1.1);
         }
 
-        /* Main content */
         .main-content {
             margin-left: 280px;
             padding: 40px 50px;
             flex-grow: 1;
             background: linear-gradient(135deg, #3c1a0a, #1e0f0f);
             overflow-y: auto;
-            border-radius: 0 40px 40px 0;
-            box-shadow: inset 8px 0 30px rgba(255, 127, 80, 0.25);
-            animation: fadeInContent 0.6s ease forwards;
         }
 
         .main-content h1 {
             font-size: 2.8rem;
             font-weight: 900;
             color: #ffb347;
-            margin-bottom: 18px;
-            text-shadow: 0 0 15px #ffb347aa;
+            margin-bottom: 20px;
         }
 
-        .main-content h2 {
-            font-size: 2rem;
-            margin-top: 40px;
-            margin-bottom: 12px;
-            color: #ffa840;
-            text-shadow: 0 0 8px #ffa840aa;
+        .stats-container {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
         }
 
-        .main-content p {
-            font-size: 1.15rem;
-            line-height: 1.6;
-            color: #ffddb3;
-            max-width: 650px;
+        .stat-box {
+            flex: 1;
+            min-width: 220px;
+            background: #2d1205;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 0 15px #ffa840aa;
+        }
+
+        .stat-box h2 {
+            font-size: 1.5rem;
+            color: #ffb347;
+        }
+
+        .stat-box p {
+            font-size: 2.4rem;
+            font-weight: bold;
+            color: #ffffff;
+            margin-top: 10px;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 15px;
-            box-shadow: 0 0 10px rgba(0,255,234,0.2);
             background: #1a1a1a;
             border-radius: 12px;
             overflow: hidden;
@@ -178,33 +163,8 @@ $msans = $stmtMsans->fetchAll(PDO::FETCH_ASSOC);
 
         tbody tr:hover {
             background: #00fff440;
-            cursor: default;
         }
 
-        ::-webkit-scrollbar {
-            width: 12px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #4e1a00;
-            border-radius: 12px;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #ff7f50;
-            border-radius: 12px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #ff914d;
-        }
-
-        @keyframes fadeInContent {
-            from {opacity: 0; transform: translateY(10px);}
-            to {opacity: 1; transform: translateY(0);}
-        }
-
-        /* Responsive */
         @media (max-width: 720px) {
             .sidebar {
                 width: 60px;
@@ -215,37 +175,41 @@ $msans = $stmtMsans->fetchAll(PDO::FETCH_ASSOC);
             }
             .sidebar nav a {
                 justify-content: center;
-                padding: 12px 8px;
                 font-size: 0;
-            }
-            .sidebar nav a .icon {
-                width: 28px;
-                height: 28px;
-                box-shadow: 0 0 15px #ff7f50aa;
             }
             .main-content {
                 margin-left: 60px;
                 padding: 30px 20px;
-                border-radius: 0;
             }
         }
     </style>
 </head>
 <body>
-    <aside class="sidebar" aria-label="Navigation principale">
+    <aside class="sidebar">
         <h2>ADMIN</h2>
         <nav>
-            <a href="dashboard.php"><span class="icon" aria-hidden="true"></span>Dashboard</a>
-            <a href="profile.php"><span class="icon" aria-hidden="true"></span>Paramètres</a>
-            <a href="acces_utilisateurs.php"><span class="icon" aria-hidden="true"></span>Accès utilisateurs</a>
-            <a href="logout.php" class="logout"><span class="icon" aria-hidden="true"></span>Déconnexion</a>
+            <a href="dashboard.php">Dashboard</a>
+            <a href="profile.php">Paramètres</a>
+            <a href="acces_utilisateurs.php">Accès utilisateurs</a>
+            <a href="logout.php" class="logout">Déconnexion</a>
         </nav>
     </aside>
 
-    <main class="main-content" role="main" tabindex="-1">
+    <main class="main-content">
         <h1>Bienvenue, <?= htmlspecialchars($_SESSION['username']) ?> !</h1>
 
-        <p>Liste des utilisateurs enregistrés :</p>
+        <div class="stats-container">
+            <div class="stat-box">
+                <h2>Nombre total d'utilisateurs</h2>
+                <p><?= $totalUsers ?></p>
+            </div>
+            <div class="stat-box">
+                <h2>Nombre total de MSANs</h2>
+                <p><?= $totalMsans ?></p>
+            </div>
+        </div>
+
+        <h2>Liste des utilisateurs :</h2>
         <table>
             <thead>
                 <tr>
