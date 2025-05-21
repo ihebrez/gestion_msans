@@ -12,9 +12,29 @@ $error = '';
 $edit_mode = false;
 $edit_msan = null;
 
+// Répertoire où stocker les images uploadées
+$upload_dir = __DIR__ . '/uploads/';
+
+// Crée le dossier s'il n'existe pas
+if (!is_dir($upload_dir)) {
+    mkdir($upload_dir, 0755, true);
+}
+
 // Suppression d'un MSAN
 if (isset($_GET['delete'])) {
     $delete_id = (int) $_GET['delete'];
+    
+    // Supprimer aussi l'image associée si existe
+    $stmt = $pdo->prepare("SELECT image FROM msans WHERE id = ? AND user_id = ?");
+    $stmt->execute([$delete_id, $user_id]);
+    $msan_to_delete = $stmt->fetch();
+    if ($msan_to_delete && !empty($msan_to_delete['image'])) {
+        $img_path = $upload_dir . $msan_to_delete['image'];
+        if (file_exists($img_path)) {
+            unlink($img_path);
+        }
+    }
+    
     $stmt = $pdo->prepare("DELETE FROM msans WHERE id = ? AND user_id = ?");
     $stmt->execute([$delete_id, $user_id]);
     header('Location: dashboard.php');
@@ -49,24 +69,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($nom === '') {
         $error = "Le nom du MSAN est obligatoire.";
     } else {
-        try {
-            if (isset($_POST['id']) && is_numeric($_POST['id'])) {
-                // Modification
-                $id = (int) $_POST['id'];
-                $stmt = $pdo->prepare("UPDATE msans SET nom = ?, type = ?, version = ?, nombre_ports = ?, service = ?, fixe_pstn = ?, adsl = ?, vdsl = ? WHERE id = ? AND user_id = ?");
-                $stmt->execute([$nom, $type, $version, $nombre_ports, $service, $fixe_pstn, $adsl, $vdsl, $id, $user_id]);
+        // Gestion upload image
+        $image_name = null;
+
+        if (isset($_FILES['image']) && $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $file = $_FILES['image'];
+
+            // Vérifications simples
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+            if (!in_array($file['type'], $allowed_types)) {
+                $error = "Type d'image non autorisé. Utilisez jpg, png ou gif.";
+            } elseif ($file['size'] > 2 * 1024 * 1024) { // 2Mo max
+                $error = "Image trop lourde (max 2Mo).";
             } else {
-                // Ajout
-                $stmt = $pdo->prepare("INSERT INTO msans (nom, type, version, nombre_ports, service, fixe_pstn, adsl, vdsl, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$nom, $type, $version, $nombre_ports, $service, $fixe_pstn, $adsl, $vdsl, $user_id]);
+                // Générer un nom unique
+                $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+                $image_name = uniqid('msan_', true) . '.' . $ext;
+                $destination = $upload_dir . $image_name;
+
+                if (!move_uploaded_file($file['tmp_name'], $destination)) {
+                    $error = "Erreur lors de l'upload de l'image.";
+                }
             }
-            header('Location: dashboard.php');
-            exit;
-        } catch (PDOException $e) {
-            if ($e->getCode() === '23000') {
-                $error = "Ce nom de MSAN existe déjà. Merci d'en choisir un autre.";
-            } else {
-                $error = "Erreur lors de l'enregistrement : " . $e->getMessage();
+        }
+
+        if (!$error) {
+            try {
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    // Modification
+                    $id = (int) $_POST['id'];
+
+                    // Si pas d'image uploadée, on conserve l'ancienne
+                    if (!$image_name && $edit_msan) {
+                        $image_name = $edit_msan['image'];
+                    } else {
+                        // Si nouvelle image, supprimer l'ancienne
+                        if ($edit_msan && !empty($edit_msan['image'])) {
+                            $old_img = $upload_dir . $edit_msan['image'];
+                            if (file_exists($old_img)) unlink($old_img);
+                        }
+                    }
+
+                    $stmt = $pdo->prepare("UPDATE msans SET nom = ?, type = ?, version = ?, nombre_ports = ?, service = ?, fixe_pstn = ?, adsl = ?, vdsl = ?, image = ? WHERE id = ? AND user_id = ?");
+                    $stmt->execute([$nom, $type, $version, $nombre_ports, $service, $fixe_pstn, $adsl, $vdsl, $image_name, $id, $user_id]);
+                } else {
+                    // Ajout
+                    $stmt = $pdo->prepare("INSERT INTO msans (nom, type, version, nombre_ports, service, fixe_pstn, adsl, vdsl, image, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmt->execute([$nom, $type, $version, $nombre_ports, $service, $fixe_pstn, $adsl, $vdsl, $image_name, $user_id]);
+                }
+                header('Location: dashboard.php');
+                exit;
+            } catch (PDOException $e) {
+                if ($e->getCode() === '23000') {
+                    $error = "Ce nom de MSAN existe déjà. Merci d'en choisir un autre.";
+                } else {
+                    $error = "Erreur lors de l'enregistrement : " . $e->getMessage();
+                }
             }
         }
     }
@@ -85,14 +143,12 @@ $msans = $stmt->fetchAll();
     <meta charset="UTF-8" />
     <title>Dashboard MSANs</title>
     <link rel="stylesheet" href="styles.css" />
-    
 </head>
 <body>
     <header>
         <h1>Dashboard MSANs</h1>
         <a href="logout.php" class="logout">Déconnexion</a>
         <a href="export.php" class="btn-export">Exporter</a>
-
     </header>
 
     <main>
@@ -102,7 +158,7 @@ $msans = $stmt->fetchAll();
                 <p class="error-msg"><?= htmlspecialchars($error) ?></p>
             <?php endif; ?>
 
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="id" value="<?= $edit_mode ? $edit_msan['id'] : '' ?>" />
 
                 <input type="text" name="nom" placeholder="Nom du MSAN" required value="<?= $edit_mode ? htmlspecialchars($edit_msan['nom']) : '' ?>" />
@@ -113,6 +169,16 @@ $msans = $stmt->fetchAll();
                 <input type="number" name="fixe_pstn" placeholder="Fixe PSTN" value="<?= $edit_mode ? (int)$edit_msan['fixe_pstn'] : '' ?>" />
                 <input type="number" name="adsl" placeholder="ADSL" value="<?= $edit_mode ? (int)$edit_msan['adsl'] : '' ?>" />
                 <input type="number" name="vdsl" placeholder="VDSL" value="<?= $edit_mode ? (int)$edit_msan['vdsl'] : '' ?>" />
+
+                <!-- Upload image -->
+                <label for="image"></label>
+                <input type="file" name="image" id="image" accept="image/*" />
+                <?php if ($edit_mode && !empty($edit_msan['image'])): ?>
+                    <div>
+                        <small>Image actuelle :</small><br/>
+                        <img src="uploads/<?= htmlspecialchars($edit_msan['image']) ?>" alt="Image MSAN" style="max-width:150px; max-height:100px;" />
+                    </div>
+                <?php endif; ?>
 
                 <button type="submit"><?= $edit_mode ? "Modifier" : "Ajouter" ?></button>
                 <?php if ($edit_mode): ?>
@@ -129,6 +195,7 @@ $msans = $stmt->fetchAll();
                 <table>
                     <thead>
                         <tr>
+                            <th>Image</th>
                             <th>Nom</th>
                             <th>Type</th>
                             <th>Version</th>
@@ -143,6 +210,13 @@ $msans = $stmt->fetchAll();
                     <tbody>
                         <?php foreach ($msans as $m): ?>
                             <tr>
+                                <td>
+                                    <?php if (!empty($m['image']) && file_exists($upload_dir . $m['image'])): ?>
+                                        <img src="uploads/<?= htmlspecialchars($m['image']) ?>" alt="Image MSAN" style="max-width:80px; max-height:60px;" />
+                                    <?php else: ?>
+                                        —
+                                    <?php endif; ?>
+                                </td>
                                 <td><?= htmlspecialchars($m['nom']) ?></td>
                                 <td><?= htmlspecialchars($m['type']) ?></td>
                                 <td><?= htmlspecialchars($m['version']) ?></td>
